@@ -32,7 +32,7 @@ def assert_grpo_only(cfg):
     assert_protocol(cfg)
 
 
-def config(size, model, run_dir, cpus=32, evaluate=False, data_dir=None, search_url=None):
+def config(size, model, run_dir, cpus=32, evaluate=False, data_dir=None, search_url=None, eval_scope='full'):
     from hydra import compose, initialize_config_dir
     from omegaconf import OmegaConf
     data_dir = Path(data_dir or ROOT / 'data/searchqa')
@@ -40,10 +40,13 @@ def config(size, model, run_dir, cpus=32, evaluate=False, data_dir=None, search_
         cfg = compose(config_name='ppo_trainer')
     for key, value in load('experiment.json').items():
         OmegaConf.update(cfg, key, value, force_add=True)
+    if eval_scope not in {'full', 'subset'}:
+        raise ValueError('Independent evaluation scope must be full or subset')
+    initial_scope = eval_scope if evaluate else 'subset'
     updates = {
         'actor_rollout_ref.model.path': str(model),
         'data.train_files': str(data_dir / 'train.parquet'),
-        'data.val_files': str(data_dir / 'test.parquet'),
+        'data.val_files': str(data_dir / ('test.parquet' if initial_scope == 'full' else 'validation_subset.parquet')),
         'trainer.experiment_name': 'grpo_searchqa_qwen25_' + size,
         'trainer.default_local_dir': str(run_dir / 'checkpoints'),
         'trainer.val_only': evaluate,
@@ -54,6 +57,10 @@ def config(size, model, run_dir, cpus=32, evaluate=False, data_dir=None, search_
         'ray_init.runtime_env.env_vars.PYTHONPATH': os.pathsep.join([str(ROOT / 'src'), str(UPSTREAM)]),
         'ray_init.runtime_env.env_vars.GRPO_RUN_DIR': str(run_dir),
         'ray_init.runtime_env.env_vars.QA_DATA_RECEIPT': str(data_dir / 'data_receipt.json'),
+        'ray_init.runtime_env.env_vars.QA_DATA_DIRECTORY': str(data_dir),
+        'ray_init.runtime_env.env_vars.QA_SUBSET_RECEIPT': str(data_dir / 'validation_subset_receipt.json'),
+        'ray_init.runtime_env.env_vars.QA_INITIAL_EVAL_SCOPE': initial_scope,
+        'ray_init.runtime_env.env_vars.QA_EVAL_MODE': eval_scope if evaluate else 'auto',
         'ray_init.runtime_env.env_vars.TOKENIZERS_PARALLELISM': 'false',
         'ray_init.runtime_env.env_vars.VLLM_USE_V1': '1',
         'ray_init.runtime_env.env_vars.OPENBLAS_NUM_THREADS': '1',
@@ -118,7 +125,8 @@ def launch(args):
     model = (args.model or base_model(args.size)).resolve()
     run_dir = (args.run_dir or ROOT / 'runs' / ('grpo_' + args.size)).resolve()
     data_dir = args.data_dir.resolve()
-    cfg = config(args.size, model, run_dir, args.cpus, args.command == 'eval', data_dir, args.search_url)
+    cfg = config(args.size, model, run_dir, args.cpus, args.command == 'eval', data_dir, args.search_url,
+                 getattr(args, 'eval_scope', None) or 'full')
     if args.dry_run:
         from omegaconf import OmegaConf
         print(OmegaConf.to_yaml(cfg))
@@ -138,6 +146,9 @@ def launch(args):
         'upstream_lock_sha256': sha(ROOT / 'configs/upstream.json'),
         'data_lock_sha256': sha(ROOT / 'configs/data.json'),
         'data_receipt_sha256': sha(data_dir / 'data_receipt.json'),
+        'evaluation_protocol_sha256': sha(ROOT / 'configs/evaluation.json'),
+        'subset_manifest_sha256': sha(ROOT / 'configs/validation_subset.json'),
+        'subset_receipt_sha256': sha(data_dir / 'validation_subset_receipt.json'),
         'retrieval_receipt': retrieval_receipt, 'search_url': cfg.env.search.search_url,
         'test_question_ids_sha256': data_receipt['files']['test']['rows']['ordered_question_ids_sha256'],
         'world_size': WORLD_SIZE, 'command': args.command,
@@ -192,6 +203,8 @@ def main():
     parser.add_argument('--search-url', default=os.environ.get('SEARCH_URL', 'http://127.0.0.1:8000/retrieve'))
     parser.add_argument('--run-dir', type=Path)
     parser.add_argument('--model', type=Path, help='Exported HF model, evaluation only')
+    parser.add_argument('--eval-scope', choices=['full', 'subset'],
+                        help='Independent eval only; default full. Training uses fixed subset then final full.')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--dry-run', action='store_true', help='Print native config without assets, GPU, API or training')
     args = parser.parse_args()
@@ -201,6 +214,8 @@ def main():
         parser.error('--model is evaluation only; training starts from the pinned base')
     if args.resume and args.command != 'train':
         parser.error('--resume is training only')
+    if args.eval_scope is not None and args.command != 'eval':
+        parser.error('--eval-scope is only for independent evaluation, not changing training validation')
     if args.command == 'export':
         verify()
         run_dir = (args.run_dir or ROOT / 'runs' / ('grpo_' + args.size)).resolve()

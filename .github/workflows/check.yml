@@ -25,7 +25,7 @@ jobs:
       - run: python src/setup.py --verify
       - run: python scripts/check_release.py
       - run: python -m pytest tests -q
-      - name: Actual pinned full QA data and unchanged native preprocessing
+      - name: Pinned full QA data and fixed balanced monitoring subset
         run: python src/data.py --prepare --verify
       - name: Real native environment with a labeled HTTP fixture, not an E5 quality claim
         run: python src/env_smoke.py
@@ -34,6 +34,7 @@ jobs:
           bash -n scripts/train.sh scripts/eval.sh scripts/start_retriever.sh
           bash scripts/train.sh --dry-run > /tmp/searchqa-train.yaml
           bash scripts/eval.sh --model ./unused --dry-run > /tmp/searchqa-eval.yaml
+          bash scripts/eval.sh --model ./unused --eval-scope subset --dry-run > /tmp/searchqa-monitor.yaml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -41,4 +42,5 @@ jobs:
           path: |
             results/environment_smoke.json
             data/searchqa/data_receipt.json
+            data/searchqa/validation_subset_receipt.json
           if-no-files-found: ignore

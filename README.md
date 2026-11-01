@@ -10,7 +10,7 @@ set beta=5. Future gated comparison methods must explicitly use beta=5;
 the reference-KL coefficient here is a different quantity, not that beta.
 No Route-SFT, RETHINK, hints, skill, external model API or distillation is used.
 
-## 1. The original Search-QA evaluation is NOT a 140-question sample
+## 1. Fixed monitoring subset; full benchmark only at the end
 
 The pinned public data is `PeterJinGo/nq_hotpotqa_train`, revision
 `b7d80abfee334a7a91cb377544f09180d58b34f6`.
@@ -30,15 +30,16 @@ The pinned public data is `PeterJinGo/nq_hotpotqa_train`, revision
 | MuSiQue | 2,417 |
 | Bamboogle | 125 |
 
-`val_batch_size=512` is **batch size, not an evaluation subset**. The native
-loader uses `shuffle=false`, `drop_last=false`, traversing all 51,713 questions
-in 102 batches, including the final one-question batch. Every evaluation uses
-the same ordered test Parquet, not a fresh draw. No WebShop/ALFWorld task set
-is reused here. Hashes and the complete protocol are in `configs/data.json`
-and `configs/evaluation.json`.
+`val_batch_size=512` is **batch size, not the task count**. This release uses
+one fixed **448-question monitoring subset: 64 from each of the seven sources**,
+at update0 and every20 updates through140. Both backbone repositories use the
+same IDs and order, committed in `configs/validation_subset.json`; it is not
+redrawn each time. The final update150 evaluates the complete51,713-question
+benchmark once. Native loaders remain `shuffle=false`, `drop_last=false`.
+No WebShop/ALFWorld task set is reused. See `configs/evaluation.json`.
 
-Native validation is greedy (`do_sample=false`, temperature0, n1), at update0
-and150. Each question allows at most four environment actions, history4,
+Evaluation remains greedy (`do_sample=false`, temperature0, n1); only the
+monitoring task set/cadence changes. Each question allows at most four environment actions, history4,
 4096 prompt tokens and512 response tokens/action. Search retrieves top3 Wiki18
 passages using the unchanged E5-base-v2/FAISS server. The original last
 `<answer>...</answer>` extraction and normalized exact match against accepted
@@ -55,7 +56,9 @@ A fresh data audit found10 exact question-string overlaps between the original
 train and test splits after case folding and trimming only. This release
 reports that fact and preserves the official split; it does not claim complete
 semantic train/test disjointness or quietly change the training pool. A strict
-deduplicated split would be a separately named experiment.
+deduplicated split would be a separately named experiment. The new monitoring
+subset excludes known exact normalized training-question matches and repeated
+question text; the original train/full-test files are not filtered.
 
 ## 2. Native training settings, unchanged
 
@@ -71,14 +74,15 @@ deduplicated split would be a separately named experiment.
 | Topology | Four FSDP ranks, four TP1 rollout replicas |
 | vLLM | Memory utilization0.5, chunked-prefill=false, eager=false, free-cache=false |
 | Interaction | Four actions, history4, prompt4096, response512, left truncation |
-| Evaluation | Full51,713 test questions; initial and final150; greedy |
+| Evaluation adaptation | Fixed448 at0/20/40/60/80/100/120/140; full51,713 only at150; greedy |
 | Storage adaptation | Save20/final150; newest two verified complete checkpoints |
 
 The Search-QA episode batch is eight times the WebShop16x8 batch. Do not
 silently reduce it for faster training. Native prompts, search action parser,
 environment feedback, reward, GRPO, optimizer, model precision, gradient
 accumulation and masks are SHA-locked. Only the Trainer import is patched to
-add read-only reporting and verified storage. [Exact adaptations](docs/UPSTREAM_DIFF.md).
+add scheduled validation loaders, read-only reporting and verified storage.
+[Exact adaptations](docs/UPSTREAM_DIFF.md).
 
 ## 3. Training environment on a clean Linux server
 
@@ -166,17 +170,16 @@ bash scripts/train.sh --resume
 # After the complete final update150 save:
 python src/run.py export --size 3b
 
-# New output directory; the SAME full test set and original greedy protocol.
-bash scripts/eval.sh --model "$PWD/runs/grpo_3b/hf150" \
+# OPTIONAL extra monitoring of an exported model; training already ran full test at150.
+bash scripts/eval.sh --eval-scope subset --model "$PWD/runs/grpo_3b/hf150" \
   --run-dir "$PWD/runs/grpo_3b_final_eval"
 python src/report.py --run-dir "$PWD/runs/grpo_3b"
 ```
 
 Default training output is `runs/grpo_3b/`. Training metrics retain native
 names; `evaluation/update_*/attempt-*/summary.json` contains the independently
-defined question-level EM and unchanged native logs. All input IDs/order must
-match the51,713-question receipt. Partial evaluations cannot masquerade as a
-full-test result. Attempts remain separate, including repeated validation on
+defined question-level EM and unchanged native logs. Each report explicitly labels `subset` or `full` and checks all IDs/order against
+the corresponding receipt. Partial evaluations cannot masquerade as a full-test result. Attempts remain separate, including repeated validation on
 resume. No scores are prefilled.
 
 Saving stages a new complete four-rank model/optimizer/RNG/data checkpoint,
@@ -190,7 +193,7 @@ uninterrupted and resumed generation are not promised to be bitwise identical.
 ## 6. Verification boundary
 
 CPU CI checks native source locks, original GRPO gradients, exact row
-preprocessing, fixed full-test identity, native HTTP tool feedback and EM,
+preprocessing, fixed balanced-subset/full-test identities and scheduling, native HTTP tool feedback and EM,
 last partial-batch accounting, failure-safe checkpoint storage and entrypoints.
 Its HTTP fixture smoke is clearly labeled: it does not test a downloaded
 Wiki18/E5/FAISS index, Actor capability or model performance.
@@ -202,3 +205,29 @@ retrieval, finite loss/grad, nonzero updates, memory after optimizer creation
 and next vLLM wake-up, and a complete save/recovery. CPU tests are not GPU proof.
 
 [Third-party sources and licenses](THIRD_PARTY.md).
+
+## 7. Monitoring runtime and score scopes
+
+The448-question specification aims at a roughly10-minute monitoring pass on
+four A10080GB cards, **not a measured runtime guarantee**. Real cost depends on
+model size, generated lengths, retrieval throughput and warm-up. Every complete
+evaluation records `wall_seconds` and questions/second. There is no600-second
+cutoff and no automatic resampling/size change after seeing scores.
+
+Native validation still runs to completion on the selected loader. The adapter
+adds `eval/subset/...` and `eval/full/...` question-EM/time curves while retaining
+all original native metric values. Do not mix448-question and51,713-question
+micro-averages into an unlabeled curve; the subset gives every source equal
+weight, whereas full-test micro-EM weights larger datasets more.
+
+`src/data.py --prepare --verify` also creates/validates the small monitoring
+Parquet beside the unchanged train/test files. Existing complete native data
+can be reused without re-downloading/reprocessing it. Only subset-local
+`extra_info.index` is rebased; prompts, search input and verifier answers are
+copied unchanged. No GPU, external model API or private dataset is needed.
+
+The ordinary training run already performs its final full test. Export/report
+commands do not trigger a second full pass. An explicit independent
+`scripts/eval.sh --eval-scope full` remains available only for deliberate reruns.
+The new cadence/subset manifest is part of resume identity; older full-test-only
+run bindings are not silently migrated. Use a new run directory for this recipe.

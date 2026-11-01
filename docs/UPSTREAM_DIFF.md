@@ -10,7 +10,7 @@ token-mean aggregation, optimizer, precision, gradient accumulation, reference
 KL0.001, entropy0.001, invalid-action penalty0.01,128x8 global episodes,
 mini256/micro16,LR1e-6,warmup0.1,150 updates, TP1/vLLM0.5, prompt4096/
 response512/left truncation, history4,max4 actions, top3 retrieval and native
-train/evaluation sampling remain unchanged. The native environment manager,
+training rollout sampling/validation decoding remain unchanged. The native environment manager,
 collector, parser, memory, reward, data preprocessing and E5 retrieval server
 are also unchanged and SHA-locked.
 
@@ -27,9 +27,11 @@ that actually use the corresponding gate; KL0.001 must not become5.
    repository keeps the original model family/size. All scientific configuration
    and full-test dataset files are identical across sizes. Entrypoints/model
    revision/output labels are the only backbone-selection differences.
-3. Preserve original initial/final150 full-test greedy validation, but add
-   separate correctly deduplicated question-level EM reports. Native metrics
-   are returned unchanged. No140/512-question shortcut or new scoring rule.
+3. Explicit evaluation adaptation: fixed448 questions (64/source) at0 and
+   every20 updates through140; the full51,713-question test only at final150.
+   Both sizes share the same committed manifest. Native generation/scoring
+   and metric values remain unchanged; additional question-EM/time metrics
+   use separate subset/full namespaces. This is not claimed as native cadence.
 4. Save every20 updates and final150 (the original launcher has save_freq=-1).
    Reuse the native serializer/loader with verified staging, atomic publish,
    newest-two retention across resume and no pruning before a new save verifies.
@@ -45,7 +47,8 @@ mixin. Full core/source locks and patch reverse-check prevent hidden edits.
 
 ## Faithful limitations, not hidden fixes
 
-Original data split overlaps are reported, not filtered. Original step/batch
+Original train/full-test split overlaps are reported, not filtered; the small
+monitoring subset excludes known exact training-question matches. Original step/batch
 aggregation remains in native logs, not silently replaced. Native parser
 permissiveness remains as is. Environment/retriever state is not added to
 FSDP checkpoints, so exact replay is not claimed. CPU tests do not certify

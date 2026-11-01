@@ -47,6 +47,7 @@ def test_real_wrapper_handles_native_local_index_reset_and_preserves_metrics(tmp
     inputs = [dict(question='Q'+str(i), ground_truth={'target':['A']},
                    data_source='nq' if i < 2 else 'hotpotqa') for i in range(3)]
     receipt = {'files': {'test': {'rows': {'question_ids': [question_id(x) for x in inputs],
+                                         'count': 3,
                                          'source_counts': {'nq': 2, 'hotpotqa': 1}}}}}
     receipt_path = tmp_path/'data_receipt.json'
     receipt_path.write_text(json.dumps(receipt))
@@ -87,9 +88,14 @@ def test_real_wrapper_handles_native_local_index_reset_and_preserves_metrics(tmp
 
     trainer = wrapper.SearchTrainer()
     trainer.global_steps = 150
+    trainer.val_dataset = object()
+    trainer.val_dataloader = object()
+    trainer._searchqa_evaluation_loaders = {'full': (trainer.val_dataset, trainer.val_dataloader)}
     trainer.traj_collector = SimpleNamespace(multi_turn_loop=collect)
     trainer.tokenizer = SimpleNamespace(decode=lambda ids,**kwargs:'<answer>A</answer>')
-    assert trainer._validate() is native_metrics
+    reported = trainer._validate()
+    assert all(reported[key] == value for key, value in native_metrics.items())
+    assert reported['eval/full/question_micro_em'] == pytest.approx(2/3)
     assert trainer.traj_collector.multi_turn_loop is collect and calls == [0, 2]
     summaries = list((tmp_path/'run/evaluation').glob('update_150/attempt-*/summary.json'))
     assert len(summaries) == 1
@@ -97,3 +103,4 @@ def test_real_wrapper_handles_native_local_index_reset_and_preserves_metrics(tmp
     assert value['questions'] == 3 and value['correct'] == 2
     assert value['question_micro_em'] == pytest.approx(2/3)
     assert value['native_metrics_unchanged'] == native_metrics
+    assert value['scope'] == 'full' and value['wall_seconds'] >= 0

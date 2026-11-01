@@ -59,7 +59,8 @@ def test_native_composed_config(size, tmp_path):
     assert cfg.actor_rollout_ref.actor.invalid_action_penalty_coef == .01
     assert cfg.actor_rollout_ref.rollout.tensor_model_parallel_size == 1
     assert cfg.actor_rollout_ref.rollout.gpu_memory_utilization == .5
-    assert cfg.trainer.total_training_steps == cfg.trainer.test_freq == 150
+    assert cfg.trainer.total_training_steps == 150 and cfg.trainer.test_freq == 20
+    assert str(cfg.data.val_files).endswith('validation_subset.parquet')
     assert cfg.trainer.save_freq == 20 and cfg.trainer.max_actor_ckpt_to_keep == 2
     assert_protocol(cfg)
 
@@ -72,7 +73,7 @@ def test_scientific_overrides_match_original_launcher(tmp_path):
     # These are precisely the portable/output/storage changes, not loss changes.
     permitted = {'data.train_files', 'data.val_files', 'actor_rollout_ref.model.path',
         'env.search.search_url', 'trainer.logger', 'trainer.project_name', 'trainer.experiment_name',
-        'trainer.save_freq'}
+        'trainer.save_freq', 'trainer.test_freq'}
     for key, raw in re.findall(r'(?m)^[ \t]+([\w.]+)=([^\s\\]+)', source):
         if '.' not in key or key in permitted:
             continue

@@ -9,15 +9,15 @@ ALLOWED = {
     '.env.example', '.gitattributes', '.gitignore', '.github/workflows/check.yml',
     'LICENSE', 'README.md', 'THIRD_PARTY.md', 'docs/EVALUATION.md', 'docs/UPSTREAM_DIFF.md',
     'configs/models.json', 'configs/release.json', 'configs/experiment.json',
-    'configs/data.json', 'configs/evaluation.json', 'configs/retrieval.json',
+    'configs/data.json', 'configs/evaluation.json', 'configs/retrieval.json', 'configs/validation_subset.json',
     'configs/upstream.json', 'configs/requirements.txt', 'configs/requirements-cpu.txt',
     'configs/requirements-retriever.txt', 'patches/runtime.patch',
     'scripts/check_release.py', 'scripts/train.sh', 'scripts/eval.sh', 'scripts/start_retriever.sh',
     'src/common.py', 'src/setup.py', 'src/downloads.py', 'src/data.py', 'src/run.py',
     'src/retrieval.py', 'src/checkpoint_io.py', 'src/evaluation_contract.py',
-    'src/grpo_eval.py', 'src/env_smoke.py', 'src/report.py',
+    'src/grpo_eval.py', 'src/env_smoke.py', 'src/report.py', 'src/validation_subset.py',
     'tests/test_checkpoint_io.py', 'tests/test_contract.py', 'tests/test_data.py',
-    'tests/test_evaluation.py', 'tests/test_native_env.py',
+    'tests/test_evaluation.py', 'tests/test_native_env.py', 'tests/test_subset.py',
 }
 PRIVATE = [
     re.compile(r'[A-Za-z]:[/\\](?:Users[/\\]|app[/\\]|mnt[/\\])', re.I),

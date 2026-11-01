@@ -46,7 +46,7 @@
   "trainer.ray_wait_register_center_timeout": 600,
   "trainer.nnodes": 1,
   "trainer.save_freq": 20,
-  "trainer.test_freq": 150,
+  "trainer.test_freq": 20,
   "trainer.total_training_steps": 150,
   "trainer.val_before_train": true,
   "trainer.max_actor_ckpt_to_keep": 2,

@@ -34,7 +34,7 @@ def row_summary(frame):
             'ordered_question_ids_sha256': digest(identifiers), 'question_ids': identifiers}
 
 
-def verify(directory):
+def verify(directory, require_subset=True):
     import pandas as pd
     directory = Path(directory)
     receipt = json.loads((directory / 'data_receipt.json').read_text(encoding='utf-8'))
@@ -57,6 +57,9 @@ def verify(directory):
             raise RuntimeError('Benchmark source counts differ: ' + split)
         if split == 'test' and observed['ordered_question_ids_sha256'] != load('evaluation.json')['ordered_question_ids_sha256']:
             raise RuntimeError('Shared full-test question identities/order changed')
+    if require_subset:
+        from validation_subset import verify as verify_subset
+        receipt = {**receipt, 'validation_subset': verify_subset(directory)}
     return receipt
 
 
@@ -66,8 +69,11 @@ def prepare(directory):
     verify_source()
     lock = load('data.json')
     if (directory / 'data_receipt.json').exists():
+        verify(directory, require_subset=False)
+        from validation_subset import prepare as prepare_subset
+        prepare_subset(directory)
         verify(directory)
-        print('Existing complete Search-QA data verified; no overwrite.')
+        print('Existing native data and fixed monitoring subset verified; no overwrite.')
         return
     if any((directory / (split + '.parquet')).exists() for split in ('train', 'test')):
         raise RuntimeError('Partial or foreign prepared data exists; preserve it and use a new directory')
@@ -96,6 +102,8 @@ def prepare(directory):
     receipt['exact_normalized_train_test_question_overlap'] = len(raw_questions['train'] & raw_questions['test'])
     receipt['overlap_policy'] = 'Report original split overlap; never silently filter an official reproduction.'
     atomic_json(directory / 'data_receipt.json', receipt)
+    from validation_subset import prepare as prepare_subset
+    prepare_subset(directory)
     verify(directory)
     print('All native questions preserved and verified. No GPU or training used.')
 
@@ -112,8 +120,10 @@ def main():
         prepare(args.directory)
     if args.verify:
         receipt = verify(args.directory)
-        print(json.dumps({s: {k:v for k,v in r['rows'].items() if k != 'question_ids'}
-                          for s,r in receipt['files'].items()}, indent=2))
+        summary = {s: {k:v for k,v in r['rows'].items() if k != 'question_ids'}
+                   for s,r in receipt['files'].items()}
+        summary['monitor_subset'] = {k:v for k,v in receipt['validation_subset']['rows'].items() if k != 'question_ids'}
+        print(json.dumps(summary, indent=2))
 
 
 if __name__ == '__main__':
