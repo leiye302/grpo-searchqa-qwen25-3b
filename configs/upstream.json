@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/ZJU-REAL/SDAR.git",
+  "commit": "29dcb12a55d8fc17ba6ae03fd0a69048f43051f3",
+  "native_launcher": "examples/grpo_trainer/run_search.sh",
+  "patch_sha256": "5b62424d9f949bb3cfb2160e3f0a6f8763eac48606d41c923427ecbfa1b6ffa4",
+  "unchanged_files": {
+    "examples/grpo_trainer/run_search.sh": "e1da133cc58090bbc7a1b4fb4fb8919c9fe40e887244fe5db740a6fd9b95ee39",
+    "examples/data_preprocess/preprocess_search_r1_dataset.py": "eef425aec12829b6de526e4a93bb3b318e2d2fba06bb5d62025cffea961ae284",
+    "examples/search/retriever/retrieval_server.py": "e5be5cd9949d0a147571c73cb2cc6089015c00dd4fcc4765c203c669c2f97976",
+    "examples/search/retriever/retrieval_launch.sh": "a8f909aeb89e1a1300cebacaa14192c10b94a9846414c2329c134e87ec6f3a2f",
+    "examples/search/searchr1_download.py": "9a85e7f6180173279c90810c0aa650a3d98224326964f15c38af06c9f71e0525",
+    "verl/trainer/config/ppo_trainer.yaml": "0f69218f169aed29a827818ca76fb26f7c1c5632bd9cbe318884617d5aa228cc",
+    "verl/trainer/ppo/ray_trainer.py": "47912490bc2e0de5999ac9588279bf38c87839145cb2101da1ab614f83a02023",
+    "verl/trainer/ppo/core_algos.py": "5043f97b87b00ab5c5d907022ea6cf148b935fdb71c37222a3f9c33ccfaf1dc6",
+    "verl/workers/actor/dp_actor.py": "c53da24aaf2ec308e7cce7be866b322890934896aa5e1ba575e8768c5fd48cd1",
+    "verl/workers/fsdp_workers.py": "7d70d685bbad4711ebd17595698cbc9a8bc379c5da20b12203fadf51f063b2cc",
+    "verl/workers/sharding_manager/fsdp_vllm.py": "d96e95942a2dd59de9c7e4289649aa23b7e2e4d061864dfdcf1498165cfa492b",
+    "verl/utils/dataset/rl_dataset.py": "998797e5efef48a58656cdbc6470a4bfc0e24515c6b802bfe0bcd2eb5833fa57",
+    "agent_system/environments/env_manager.py": "6294aef97cf12775222b8c189273f990065ecca13d1308650311ebe0ab1c64f5",
+    "agent_system/environments/prompts/search.py": "b91861c382222d9c5df83035b8ebb6e353c08a92fee6763c0863d85be3fd56c4",
+    "agent_system/memory/memory.py": "d9940bf9d49442f76667b80aff7e80b7c93f37bef015b06641e60229bb3f0d9c",
+    "agent_system/multi_turn_rollout/rollout_loop.py": "23b9f35d8eb2cd87effd763286aefe6868d19473a4266b94e51c3390c92d035b",
+    "agent_system/reward_manager/episode.py": "f9a71d8ccba625f2dc218594a3f9edaa2894306a1accc62cd19832ef4c521428",
+    "agent_system/environments/env_package/search/envs.py": "5d13f03be97c75430c4d36ea063ec8c02bed31b2f21625604177b425112bcee3",
+    "agent_system/environments/env_package/search/projection.py": "9c8d9f113e038201cfa263b45cf375dd4ecef701421bdb38c62f8136f163e925",
+    "agent_system/environments/env_package/search/third_party/skyrl_gym/envs/search/env.py": "5ef7e8e1b8e91babe23909b06a02b64ded50e78325906818a004e979ca97bf7c",
+    "agent_system/environments/env_package/search/third_party/skyrl_gym/envs/search/utils.py": "989d04655cd9441ee004c1f9c612d7ced21a96b71b88aecf7c7333978960da01",
+    "agent_system/environments/env_package/search/third_party/skyrl_gym/tools/search.py": "f91d705da8bd10b3ae52fc304b2d5ace400853a6960802c424168a98f4f3f836"
+  },
+  "patched_files": {
+    "verl/trainer/main_ppo.py": "c6b9a41d9db0fcb4ac0f9899df493c1cf2c862e00d65f9ca85cb6c2edf1d54c2"
+  }
+}
