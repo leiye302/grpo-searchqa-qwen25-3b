@@ -57,7 +57,7 @@ def test_real_wrapper_handles_native_local_index_reset_and_preserves_metrics(tmp
         def _validate(self):
             for offset, count in [(0, 2), (2, 1)]:
                 gen = SimpleNamespace(non_tensor_batch={'env_kwargs': np.array(inputs[offset:offset+count], dtype=object),
-                    'index': np.arange(offset, offset+count)})
+                    'data_source': np.array([x['data_source'] for x in inputs[offset:offset+count]])})
                 self.traj_collector.multi_turn_loop(gen_batch=gen, is_train=False)
             return native_metrics
 
@@ -74,9 +74,9 @@ def test_real_wrapper_handles_native_local_index_reset_and_preserves_metrics(tmp
     def collect(gen_batch, **kwargs):
         # Match native behavior: env_kwargs is consumed; output index is local.
         count = len(gen_batch.non_tensor_batch.pop('env_kwargs'))
-        offset = int(gen_batch.non_tensor_batch['index'][0])
+        offset = sum(calls)
         local = [0, 0, 1] if count == 2 else [0]
-        calls.append(offset)
+        calls.append(count)
         nt = {'index': local,
             'traj_uid': ['t'+str(offset+i) for i in local],
             'episode_rewards': [1. if offset+i != 1 else 0. for i in local],
@@ -88,6 +88,7 @@ def test_real_wrapper_handles_native_local_index_reset_and_preserves_metrics(tmp
 
     trainer = wrapper.SearchTrainer()
     trainer.global_steps = 150
+    trainer.config = SimpleNamespace(trainer=SimpleNamespace(val_only=True))
     trainer.val_dataset = object()
     trainer.val_dataloader = object()
     trainer._searchqa_evaluation_loaders = {'full': (trainer.val_dataset, trainer.val_dataloader)}
@@ -96,7 +97,7 @@ def test_real_wrapper_handles_native_local_index_reset_and_preserves_metrics(tmp
     reported = trainer._validate()
     assert all(reported[key] == value for key, value in native_metrics.items())
     assert reported['eval/full/question_micro_em'] == pytest.approx(2/3)
-    assert trainer.traj_collector.multi_turn_loop is collect and calls == [0, 2]
+    assert trainer.traj_collector.multi_turn_loop is collect and calls == [2, 1]
     summaries = list((tmp_path/'run/evaluation').glob('update_150/attempt-*/summary.json'))
     assert len(summaries) == 1
     value = json.loads(summaries[0].read_text())

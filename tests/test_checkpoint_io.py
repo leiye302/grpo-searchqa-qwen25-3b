@@ -443,3 +443,156 @@ def test_storage_adapter_retains_original_native_algorithm():
                  'verl/workers/fsdp_workers.py', 'verl/trainer/ppo/ray_trainer.py'):
         assert name in lock['unchanged_files']
     assert set(lock['patched_files']) == {'verl/trainer/main_ppo.py'}
+
+
+def search_wrapper(monkeypatch, native):
+    module = types.ModuleType('verl.trainer.ppo.ray_trainer')
+    module.RayPPOTrainer = native
+    monkeypatch.setitem(sys.modules, 'verl.trainer.ppo.ray_trainer', module)
+    spec = importlib.util.spec_from_file_location('final_checkpoint_search_eval', ROOT / 'src/grpo_eval.py')
+    wrapped = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wrapped)
+    return wrapped
+
+
+@pytest.mark.parametrize('evaluation_fails', [False, True])
+def test_final_checkpoint_is_verified_before_full_test_and_never_written_twice(store, monkeypatch, evaluation_fails):
+    save(store, 120)
+    save(store, 140)
+    events = []
+
+    class Native:
+        def _save_checkpoint(self):
+            events.append('save')
+            assert self.config.trainer.max_actor_ckpt_to_keep is None
+            native_files(Path(self.config.trainer.default_local_dir) / 'global_step_150', 150)
+
+    wrapper = search_wrapper(monkeypatch, Native)
+    trainer = wrapper.SearchTrainer()
+    trainer.config = config('3b', store.run_dir / 'model', store.run_dir)
+    trainer.use_critic, trainer.global_steps = False, 150
+    dataset, loader = object(), object()
+    trainer.val_dataset, trainer.val_dataloader = dataset, loader
+    trainer._evaluation_loader = lambda scope: (object(), object())
+    monkeypatch.setenv('GRPO_RUN_DIR', str(store.run_dir))
+    monkeypatch.setenv('QA_EVAL_MODE', 'auto')
+
+    def full_test(scope, started):
+        events.append('evaluate')
+        assert scope == 'full'
+        store.verify(store.root / 'global_step_150')
+        assert steps(store) == [140, 150]
+        if evaluation_fails:
+            raise TimeoutError('interrupted full evaluation')
+        return {'eval/full/question_micro_em': .5}
+
+    trainer._validate_selected = full_test
+    if evaluation_fails:
+        with pytest.raises(TimeoutError, match='interrupted full evaluation'):
+            trainer._validate()
+    else:
+        assert trainer._validate()['eval/full/question_micro_em'] == .5
+    assert events == ['save', 'evaluate']
+    assert trainer.val_dataset is dataset and trainer.val_dataloader is loader
+    store.verify(store.root / 'global_step_150')
+    # This is the subsequent call made by the untouched native fit loop.
+    trainer._save_checkpoint()
+    assert events == ['save', 'evaluate']
+    assert steps(store) == [140, 150]
+    target = store.root / 'global_step_150/actor/merges.txt'
+    target.write_bytes(target.read_bytes().replace(b'a b', b'c d'))
+    with pytest.raises(RuntimeError, match='mismatch'):
+        trainer._save_checkpoint()
+
+
+def test_failed_final_save_does_not_start_expensive_test_or_remove_old_checkpoints(store, monkeypatch):
+    save(store, 120)
+    save(store, 140)
+
+    class Native:
+        def _save_checkpoint(self):
+            raise OSError('final serializer interrupted')
+
+    wrapper = search_wrapper(monkeypatch, Native)
+    trainer = wrapper.SearchTrainer()
+    trainer.config = config('3b', store.run_dir / 'model', store.run_dir)
+    trainer.use_critic, trainer.global_steps = False, 150
+    trainer._evaluation_loader = lambda scope: pytest.fail('evaluation must not start before a verified save')
+    monkeypatch.setenv('GRPO_RUN_DIR', str(store.run_dir))
+    monkeypatch.setenv('QA_EVAL_MODE', 'auto')
+    with pytest.raises(OSError, match='serializer interrupted'):
+        trainer._validate()
+    assert steps(store) == [120, 140]
+    assert int((store.root / POINTER).read_text()) == 140
+
+
+@pytest.mark.parametrize('step', [0, 150])
+def test_independent_full_evaluation_does_not_save_a_training_checkpoint(tmp_path, monkeypatch, step):
+    wrapper = search_wrapper(monkeypatch, object)
+    trainer = wrapper.SearchTrainer()
+    trainer.config = config('3b', tmp_path / 'model', tmp_path / 'eval', evaluate=True)
+    trainer.global_steps = step
+    trainer.val_dataset, trainer.val_dataloader = object(), object()
+    trainer._evaluation_loader = lambda scope: (object(), object())
+    trainer._validate_selected = lambda scope, started: {'scope': scope}
+    trainer._save_checkpoint = lambda: pytest.fail('evaluation-only must not save training state')
+    monkeypatch.setenv('QA_EVAL_MODE', 'full')
+    assert trainer._validate() == {'scope': 'full'}
+    assert not (tmp_path / 'eval').exists()
+
+
+@pytest.mark.parametrize('step', [20, 140, 150])
+def test_resume_at_final_update_only_retries_evaluation(tmp_path, step):
+    from run import configure_resume
+    cfg = config('3b', tmp_path / 'model', tmp_path / 'run')
+    path = tmp_path / 'run/checkpoints' / f'global_step_{step}'
+    configure_resume(cfg, path)
+    assert cfg.trainer.resume_mode == 'resume_path'
+    assert cfg.trainer.resume_from_path == str(path)
+    assert cfg.trainer.val_only == (step == 150)
+    assert cfg.trainer.total_training_steps == 150
+
+
+@pytest.mark.parametrize('step', [0, 151])
+def test_resume_rejects_zero_and_beyond_training_budget(tmp_path, step):
+    from run import configure_resume
+    cfg = config('3b', tmp_path / 'model', tmp_path / 'run')
+    with pytest.raises(RuntimeError, match='complete checkpoint'):
+        configure_resume(cfg, tmp_path / f'global_step_{step}')
+
+
+def test_final_resume_exits_actual_native_fit_before_update151(store, monkeypatch):
+    from run import configure_resume
+    source = ROOT / '.deps/sdar/verl/trainer/ppo/ray_trainer.py'
+    tree = ast.parse(source.read_text(encoding='utf-8'))
+    native = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'RayPPOTrainer')
+    method = next(n for n in native.body if isinstance(n, ast.FunctionDef) and n.name == 'fit')
+    namespace = {'pprint': lambda *args, **kwargs: None,
+                 'tqdm': lambda **kwargs: pytest.fail('completed final update must not restart training')}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), 'exec'), namespace)
+
+    class Native:
+        fit = namespace['fit']
+
+        def _load_checkpoint(self):
+            self.global_steps = 150
+
+    class Tracking:
+        def __init__(self, **kwargs):
+            pass
+        def log(self, **kwargs):
+            pass
+
+    tracking = types.ModuleType('verl.utils.tracking')
+    tracking.Tracking = Tracking
+    monkeypatch.setitem(sys.modules, 'verl.utils.tracking', tracking)
+    wrapper = search_wrapper(monkeypatch, Native)
+    trainer = wrapper.SearchTrainer()
+    trainer.config = config('3b', store.run_dir / 'model', store.run_dir)
+    configure_resume(trainer.config, store.root / 'global_step_150')
+    trainer.val_reward_fn = object()
+    calls = []
+    trainer._validate = lambda: calls.append(trainer.global_steps) or {'eval/full/questions': 51713}
+    monkeypatch.setenv('GRPO_RUN_DIR', str(store.run_dir))
+    trainer.fit()
+    assert calls == [150] and trainer.global_steps == 150

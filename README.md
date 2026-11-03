@@ -187,6 +187,11 @@ checks archive CRCs and SHA, atomically publishes it, then prunes older same-run
 saves. Resume re-scans the disk and keeps only the newest two verified saves.
 Corrupt, linked, partial or foreign evidence is preserved, not blindly deleted.
 Full hashes/recipe/backbone/data/receipt/world size must match for resume.
+The final update150 is saved and SHA-verified **before** its full51,713-question
+evaluation. The native post-validation save re-verifies that checkpoint instead
+of writing it twice. If the full evaluation is interrupted, the same
+`bash scripts/train.sh --resume` restores update150 and retries evaluation only;
+it does not repeat training or execute update151. Partial attempts remain separate.
 Original environment/retrieval state is not part of the FSDP checkpoint, so
 uninterrupted and resumed generation are not promised to be bitwise identical.
 

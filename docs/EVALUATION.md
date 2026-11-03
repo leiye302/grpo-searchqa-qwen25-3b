@@ -30,6 +30,12 @@ batch; full evaluation traverses101 complete batches and a final singleton.
 No600-second cutoff, skipped final batch, automatic resampling or score-driven
 subset resizing is allowed.
 
+The completed update150 checkpoint is atomically published and SHA-verified
+before the full test begins. If that test is interrupted, resume restores the
+same final update and runs native validation-only, never another optimizer
+update. The normal native post-validation save re-verifies rather than
+overwriting the already-complete final checkpoint.
+
 The ordinary training run already makes the final full pass. Export/report
 commands do not run another full test. Independent eval defaults to full and
 requires a separate explicitly requested run; --eval-scope subset is available
@@ -91,6 +97,11 @@ Added metrics use eval/subset/... or eval/full/... namespaces. Summary JSON/CSV
 records scope, count, ordered-ID SHA, per-source EM and wall_seconds. Native
 collector local indices are mapped back to validation-input indices, including
 the final partial batch; subset records also retain original_test_index.
+Native validation does not pass the dataset's index field into gen_batch.
+The adapter first verifies the actual question/target/source IDs and their
+order against the selected receipt, then derives scope-local positions from
+the number already seen. It never requires an absent input index or inserts
+one into the native collector's inputs.
 Missing, replaced or duplicated input indices fail complete-scope reporting.
 
 Each attempt has a separate directory. An interrupted attempt without a complete

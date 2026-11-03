@@ -18,6 +18,7 @@ ALLOWED = {
     'src/grpo_eval.py', 'src/env_smoke.py', 'src/report.py', 'src/validation_subset.py',
     'tests/test_checkpoint_io.py', 'tests/test_contract.py', 'tests/test_data.py',
     'tests/test_evaluation.py', 'tests/test_native_env.py', 'tests/test_subset.py',
+    'tests/test_native_validation_boundary.py',
 }
 PRIVATE = [
     re.compile(r'[A-Za-z]:[/\\](?:Users[/\\]|app[/\\]|mnt[/\\])', re.I),

@@ -252,6 +252,13 @@ class NativeCheckpointMixin:
     def _save_checkpoint(self):
         store = self._checkpoint_store()
         trainer = self.config.trainer
+        step = int(self.global_steps)
+        final = step == trainer.total_training_steps
+        destination = store.root / f'global_step_{step}'
+        if final and getattr(self, '_verified_final_save', None) == str(destination):
+            # The final validation already saved this update in this controller.
+            # Native fit calls save again afterward: verify, never overwrite.
+            return store.verify(destination)
         native_save = super()._save_checkpoint
 
         def write_native(staging):
@@ -267,7 +274,10 @@ class NativeCheckpointMixin:
                 for key, value in previous.items():
                     trainer[key] = value
 
-        return store.save(int(self.global_steps), write_native)
+        checkpoint = store.save(step, write_native)
+        if final:
+            self._verified_final_save = str(checkpoint)
+        return checkpoint
 
     def _load_checkpoint(self):
         if self.config.trainer.val_only:

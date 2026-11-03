@@ -18,6 +18,18 @@ def base_model(size):
     return ROOT / 'models' / load('models.json')[size]['model_id'].split('/')[-1]
 
 
+def configure_resume(cfg, checkpoint):
+    """Resume updates normally, or finish evaluation of an already-saved final update."""
+    step = int(checkpoint.name.removeprefix('global_step_'))
+    if not 0 < step <= cfg.trainer.total_training_steps:
+        raise RuntimeError('Expected a complete checkpoint at or below the final update')
+    cfg.trainer.resume_mode = 'resume_path'
+    cfg.trainer.resume_from_path = str(checkpoint)
+    # Native fit loads first, validates, then returns when val_only is true.
+    # It must not execute update151 after an interrupted final full test.
+    cfg.trainer.val_only = step == cfg.trainer.total_training_steps
+
+
 def assert_grpo_only(cfg):
     if cfg.algorithm.adv_estimator != 'grpo':
         raise RuntimeError('This baseline uses native GRPO')
@@ -162,11 +174,7 @@ def launch(args):
     with run_lock(run_dir):
         if args.resume:
             checkpoint = CheckpointStore(run_dir).recover()
-            step = int(checkpoint.name.removeprefix('global_step_'))
-            if not 0 < step < 150:
-                raise RuntimeError('Expected an intermediate complete checkpoint below update150')
-            cfg.trainer.resume_mode = 'resume_path'
-            cfg.trainer.resume_from_path = str(checkpoint)
+            configure_resume(cfg, checkpoint)
         import torch
         if torch.cuda.device_count() != WORLD_SIZE:
             raise RuntimeError('Four allocated CUDA devices are required')

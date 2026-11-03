@@ -51,6 +51,12 @@ class SearchTrainer(NativeCheckpointMixin, RayPPOTrainer):
 
     def _validate(self):
         scope = validation_scope(int(self.global_steps), os.environ.get('QA_EVAL_MODE', 'auto'))
+        if (scope == 'full' and os.environ.get('QA_EVAL_MODE', 'auto') == 'auto'
+                and not self.config.trainer.val_only
+                and int(self.global_steps) == self.config.trainer.total_training_steps):
+            # Native fit validates before its final save. Publish and SHA-verify
+            # the completed update first; a failed full test must not lose it.
+            self._save_checkpoint()
         started = time.monotonic()
         original_dataset, original_loader = self.val_dataset, self.val_dataloader
         self.val_dataset, self.val_dataloader = self._evaluation_loader(scope)
@@ -82,9 +88,11 @@ class SearchTrainer(NativeCheckpointMixin, RayPPOTrainer):
             offset = len(seen_ids)
             if identities != expected['question_ids'][offset:offset + len(identities)]:
                 raise RuntimeError('Actual validation batch differs from the fixed ' + scope + ' order')
-            input_indices = [int(i) for i in incoming.non_tensor_batch['index']]
-            if input_indices != list(range(offset, offset + len(identities))):
-                raise RuntimeError('Native validation skipped, reordered or repeated question indices')
+            # Native _validate.pop does NOT pass dataset "index" to the
+            # collector. Derive scope-local positions only after verifying the
+            # actual question/target/source identities against the receipt.
+            # The collector's returned "index" is local to THIS input batch.
+            input_indices = list(range(offset, offset + len(identities)))
             input_ids = dict(zip(input_indices, identities))
             batch = original(*args, **kwargs)
             nt = batch.non_tensor_batch

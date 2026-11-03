@@ -109,13 +109,14 @@ def test_loader_switching_and_receipts_keep_scopes_separate_without_touching_tra
             offset = 0
             for items in self.val_dataloader:
                 gen = SimpleNamespace(non_tensor_batch={'env_kwargs': np.array(items, dtype=object),
-                    'index': np.arange(offset, offset + len(items))})
+                    'data_source': np.array([x['data_source'] for x in items])})
                 self.traj_collector.multi_turn_loop(gen_batch=gen, is_train=False)
                 offset += len(items)
             return {'val/native_unchanged': .25}
 
     wrapper = import_wrapper(monkeypatch, Native)
     trainer = wrapper.SearchTrainer()
+    trainer.config = SimpleNamespace(trainer=SimpleNamespace(val_only=True))
     subset_loader = [[inputs[0], inputs[2]]]
     full_loader = [inputs[:2], inputs[2:]]
     subset_dataset, full_dataset, train_loader = object(), object(), object()

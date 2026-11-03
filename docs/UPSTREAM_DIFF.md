@@ -35,6 +35,9 @@ that actually use the corresponding gate; KL0.001 must not become5.
 4. Save every20 updates and final150 (the original launcher has save_freq=-1).
    Reuse the native serializer/loader with verified staging, atomic publish,
    newest-two retention across resume and no pruning before a new save verifies.
+   Publish/verify final150 before starting its full test; the subsequent native
+   save only re-verifies that same-controller final checkpoint. Resuming an
+   already-completed final update uses native val_only and cannot run update151.
    No optimizer-update or rollout logic is rewritten.
 5. Start the unchanged retriever explicitly in its own documented environment/
    session rather than silently activating a private conda environment or
